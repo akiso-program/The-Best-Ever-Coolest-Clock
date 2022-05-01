@@ -15,7 +15,7 @@
     <script id="vs_transform" type="x-shader/x-vertex">#version 300 es
 layout (location = 0) in vec2 position;
 layout (location = 1) in vec2 velocity;
-layout (location = 2) in vec4 color;
+layout (location = 2) in vec2 target;
 
 uniform float time;
 uniform vec2 mousePos; // -1.0 ~ 1.0
@@ -24,46 +24,34 @@ uniform float acceleration; // 加速度係数
 
 out vec2 vPosition;
 out vec2 vVelocity;
-out vec4 vColor;
 
 const float SPEED = 0.05;  // パーティクルの速度係数
 
 void main(){
     
-    vec2 v = normalize(mousePos - position) * 0.2; // カーソル位置へのベクトル
+    vec2 v = normalize(target - position) * 0.5; // カーソル位置へのベクトル
     vVelocity = normalize(v + velocity);           // ハーフベクトルで向きを補正
 
     vPosition = position + vVelocity * SPEED * acceleration;
-
-    // ドラッグされてない場合は前回の進行方向を維持する
-    if(!isMove){
-        vPosition = position;
-        vVelocity = velocity;
-    }
-    vColor = color;
 }
         </script>
         <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
 precision highp float;
 
-in vec4 vColor;
-out vec4 outColor;
-
 void main(){
-    outColor = vColor;
 }
         </script>
         <script id="vs_main" type="x-shader/x-vertex">#version 300 es
 layout (location = 0) in vec2 position;
 layout (location = 1) in vec2 velocity;
-layout (location = 2) in vec4 color;
+layout (location = 2) in vec2 target;
 
 uniform mat4 vpMatrix;
 uniform float move;
 
 void main(){
     gl_Position = vpMatrix * vec4(position, 1.0, 1.0);
-    gl_PointSize = 1.0 * (1.0 + move);
+    gl_PointSize = 1.0 * (3.0 + move);
 }
         </script>
         <script id="fs_main" type="x-shader/x-fragment">#version 300 es
