@@ -1,413 +1,253 @@
-// sample_096
-//
-// WebGLでVTFによるGPGPUパーティクル
+(function(){
+    'use strict';
 
-window.onload = function(){
-	var i, j;
-	var run = true;           // アニメーション継続フラグ
-	var velocity = 0;         // パーティクルの加速度係数
-	var mouseFlag = false;    // マウス操作のフラグ
-	var mousePositionX = 0.0; // マウス座標X（-1.0 から 1.0）
-	var mousePositionY = 0.0; // マウス座標Y（-1.0 から 1.0）
-	
-	// canvasエレメントを取得
-	c = document.getElementById('canvas');
-	c.width = Math.min(window.innerWidth, window.innerHeight);
-	c.height = c.width;
-	
-	// WebGLコンテキストの初期化
-	var gl = c.getContext('webgl');
-	
-	// イベント登録
-	c.addEventListener('mousedown', mouseDown, true);
-	c.addEventListener('mouseup', mouseUp, true);
-	c.addEventListener('mousemove', mouseMove, true);
-	window.addEventListener('keydown', keyDown, true);
-	
-	// 頂点テクスチャフェッチが利用可能かどうかチェック
-	i = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS);
-	if(i > 0){
-		console.log('max_vertex_texture_imaeg_unit: ' + i);
-	}else{
-		alert('VTF not supported');
-		return;
-	}
-	
-	// 浮動小数点数テクスチャが利用可能かどうかチェック
-	var ext;
-	ext = gl.getExtension('OES_texture_float') || gl.getExtension('OES_texture_half_float');
-	if(ext == null){
-		alert('float texture not supported');
-		return;
-	}
-	
-	// シェーダ用変数
-	var v_shader, f_shader;
-	
-	// 頂点のレンダリングを行うシェーダ
-	v_shader = create_shader('point_vs');
-	f_shader = create_shader('point_fs');
-	var pPrg = create_program(v_shader, f_shader);
-	
-	// locationの初期化
-	var pAttLocation = [];
-	pAttLocation[0] = gl.getAttribLocation(pPrg, 'index');
-	var pAttStride = [];
-	pAttStride[0] = 1;
-	var pUniLocation = [];
-	pUniLocation[0] = gl.getUniformLocation(pPrg, 'resolution');
-	pUniLocation[1] = gl.getUniformLocation(pPrg, 'texture');
-	pUniLocation[2] = gl.getUniformLocation(pPrg, 'pointScale');
-	pUniLocation[3] = gl.getUniformLocation(pPrg, 'ambient');
-	
-	// テクスチャへの描き込みを行うシェーダ
-	v_shader = create_shader('velocity_vs');
-	f_shader = create_shader('velocity_fs');
-	var vPrg = create_program(v_shader, f_shader);
-	
-	// locationの初期化
-	var vAttLocation = [];
-	vAttLocation[0] = gl.getAttribLocation(vPrg, 'position');
-	var vAttStride = [];
-	vAttStride[0] = 3;
-	var vUniLocation = [];
-	vUniLocation[0] = gl.getUniformLocation(vPrg, 'resolution');
-	vUniLocation[1] = gl.getUniformLocation(vPrg, 'texture');
-	vUniLocation[2] = gl.getUniformLocation(vPrg, 'mouse');
-	vUniLocation[3] = gl.getUniformLocation(vPrg, 'mouseFlag');
-	vUniLocation[4] = gl.getUniformLocation(vPrg, 'velocity');
-	
-	// テクスチャへの描き込みを行うシェーダ
-	v_shader = create_shader('default_vs');
-	f_shader = create_shader('default_fs');
-	var dPrg = create_program(v_shader, f_shader);
-	
-	// locationの初期化
-	var dAttLocation = [];
-	dAttLocation[0] = gl.getAttribLocation(dPrg, 'position');
-	var dAttStride = [];
-	dAttStride[0] = 3;
-	var dUniLocation = [];
-	dUniLocation[0] = gl.getUniformLocation(dPrg, 'resolution');
-	
-	// テクスチャの幅と高さ
-	var TEXTURE_WIDTH  = 512;
-	var TEXTURE_HEIGHT = 512;
-	var resolution = [TEXTURE_WIDTH, TEXTURE_HEIGHT];
-	
-	// 頂点
-	var vertices = new Array(TEXTURE_WIDTH * TEXTURE_HEIGHT);
-	
-	// 頂点のインデックスを連番で割り振る
-	for(i = 0, j = vertices.length; i < j; i++){
-		vertices[i] = i;
-	}
-	
-	// 頂点情報からVBO生成
-	var vIndex = create_vbo(vertices);
-	var vVBOList = [vIndex];
-	
-	// 板ポリ
-	var position = [
-		-1.0,  1.0,  0.0,
-		-1.0, -1.0,  0.0,
-		 1.0,  1.0,  0.0,
-		 1.0, -1.0,  0.0
-	];
-	var vPlane = create_vbo(position);
-	var planeVBOList = [vPlane];
-	
-	// フレームバッファの生成
-	var backBuffer  = create_framebuffer(TEXTURE_WIDTH, TEXTURE_WIDTH, gl.FLOAT);
-	var frontBuffer = create_framebuffer(TEXTURE_WIDTH, TEXTURE_WIDTH, gl.FLOAT);
-	var flip = null;
-	
-	// フラグ
-	gl.disable(gl.BLEND);
-	gl.blendFunc(gl.ONE, gl.ONE);
-	
-	// デフォルトの頂点情報を書き込む
-	(function(){
-		// フレームバッファをバインド
-		gl.bindFramebuffer(gl.FRAMEBUFFER, backBuffer.f);
-		
-		// ビューポートを設定
-		gl.viewport(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-		
-		// フレームバッファを初期化
-		gl.clearColor(0.0, 0.0, 0.0, 0.0);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-		
-		// プログラムオブジェクトの選択
-		gl.useProgram(dPrg);
-		
-		// テクスチャへ頂点情報をレンダリング
-		set_attribute(planeVBOList, dAttLocation, dAttStride);
-		gl.uniform2fv(dUniLocation[0], resolution);
-		gl.drawArrays(gl.TRIANGLE_STRIP, 0, position.length / 3);
-	})();
-	
-	// レンダリング関数の呼び出し
-	var count = 0;
-	var ambient = [];
-	render();
-	
-	// 恒常ループ
-	function render(){
-		// ブレンドは無効化
-		gl.disable(gl.BLEND);
-		
-		// フレームバッファをバインド
-		gl.bindFramebuffer(gl.FRAMEBUFFER, frontBuffer.f);
-		
-		// ビューポートを設定
-		gl.viewport(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-		
-		// フレームバッファを初期化
-		gl.clearColor(0.0, 0.0, 0.0, 0.0);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-		
-		// プログラムオブジェクトの選択
-		gl.useProgram(vPrg);
-		
-		// テクスチャとしてバックバッファをバインド
-		gl.bindTexture(gl.TEXTURE_2D, backBuffer.t);
-		
-		// テクスチャへ頂点情報をレンダリング
-		set_attribute(planeVBOList, vAttLocation, vAttStride);
-		gl.uniform2fv(vUniLocation[0], resolution);
-		gl.uniform1i(vUniLocation[1], 0);
-		gl.uniform2fv(vUniLocation[2], [mousePositionX, mousePositionY]);
-		gl.uniform1i(vUniLocation[3], mouseFlag);
-		gl.uniform1f(vUniLocation[4], velocity);
-		gl.drawArrays(gl.TRIANGLE_STRIP, 0, position.length / 3);
-		
-		// パーティクルの色
-		count++;
-		ambient = hsva(count % 360, 1.0, 0.8, 1.0);
-		
-		// ブレンドを有効化
-		gl.enable(gl.BLEND);
-		
-		// ビューポートを設定
-		gl.viewport(0, 0, c.width, c.height);
-		
-		// フレームバッファのバインドを解除
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.clearColor(0.0, 0.0, 0.0, 1.0);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-		
-		// プログラムオブジェクトの選択
-		gl.useProgram(pPrg);
-		
-		// フレームバッファをテクスチャとしてバインド
-		gl.bindTexture(gl.TEXTURE_2D, frontBuffer.t);
-		
-		// 頂点を描画
-		set_attribute(vVBOList, pAttLocation, pAttStride);
-		gl.uniform2fv(pUniLocation[0], resolution);
-		gl.uniform1i(pUniLocation[1], 0);
-		gl.uniform1f(pUniLocation[2], velocity);
-		gl.uniform4fv(pUniLocation[3], ambient);
-		gl.drawArrays(gl.POINTS, 0, vertices.length);
-		
-		// コンテキストの再描画
-		gl.flush();
-		
-		// 加速度の調整
-		if(mouseFlag){
-			velocity = 1.0;
-		}else{
-			velocity *= 0.95;
-		}
-		
-		// フレームバッファをフリップ
-		flip = backBuffer;
-		backBuffer = frontBuffer;
-		frontBuffer = flip;
-		
-		// ループのために再帰呼び出し
-		if(run){requestAnimationFrame(render);}
-	}
-	
-	// イベント処理
-	function mouseDown(eve){
-		mouseFlag = true;
-	}
-	function mouseUp(eve){
-		mouseFlag = false;
-	}
-	function mouseMove(eve){
-		if(mouseFlag){
-			var cw = c.width;
-			var ch = c.height;
-			mousePositionX = (eve.clientX - c.offsetLeft - cw / 2.0) / cw * 2.0;
-			mousePositionY = -(eve.clientY - c.offsetTop - ch / 2.0) / ch * 2.0;
-		}
-	}
-	function keyDown(eve){
-		run = (eve.keyCode !== 27);
-	}
-	
-	// シェーダを生成する関数
-	function create_shader(id){
-		// シェーダを格納する変数
-		var shader;
-		
-		// HTMLからscriptタグへの参照を取得
-		var scriptElement = document.getElementById(id);
-		
-		// scriptタグが存在しない場合は抜ける
-		if(!scriptElement){return;}
-		
-		// scriptタグのtype属性をチェック
-		switch(scriptElement.type){
-			
-			// 頂点シェーダの場合
-			case 'x-shader/x-vertex':
-				shader = gl.createShader(gl.VERTEX_SHADER);
-				break;
-				
-			// フラグメントシェーダの場合
-			case 'x-shader/x-fragment':
-				shader = gl.createShader(gl.FRAGMENT_SHADER);
-				break;
-			default :
-				return;
-		}
-		
-		// 生成されたシェーダにソースを割り当てる
-		gl.shaderSource(shader, scriptElement.text);
-		
-		// シェーダをコンパイルする
-		gl.compileShader(shader);
-		
-		// シェーダが正しくコンパイルされたかチェック
-		if(gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
-			
-			// 成功していたらシェーダを返して終了
-			return shader;
-		}else{
-			
-			// 失敗していたらエラーログをアラートする
-			alert(gl.getShaderInfoLog(shader));
-		}
-	}
-	
-	// プログラムオブジェクトを生成しシェーダをリンクする関数
-	function create_program(vs, fs){
-		// プログラムオブジェクトの生成
-		var program = gl.createProgram();
-		
-		// プログラムオブジェクトにシェーダを割り当てる
-		gl.attachShader(program, vs);
-		gl.attachShader(program, fs);
-		
-		// シェーダをリンク
-		gl.linkProgram(program);
-		
-		// シェーダのリンクが正しく行なわれたかチェック
-		if(gl.getProgramParameter(program, gl.LINK_STATUS)){
-		
-			// 成功していたらプログラムオブジェクトを有効にする
-			gl.useProgram(program);
-			
-			// プログラムオブジェクトを返して終了
-			return program;
-		}else{
-			
-			// 失敗していたらエラーログをアラートする
-			alert(gl.getProgramInfoLog(program));
-		}
-	}
-	
-	// VBOを生成する関数
-	function create_vbo(data){
-		// バッファオブジェクトの生成
-		var vbo = gl.createBuffer();
-		
-		// バッファをバインドする
-		gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-		
-		// バッファにデータをセット
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-		
-		// バッファのバインドを無効化
-		gl.bindBuffer(gl.ARRAY_BUFFER, null);
-		
-		// 生成した VBO を返して終了
-		return vbo;
-	}
-	
-	// VBOをバインドし登録する関数
-	function set_attribute(vbo, attL, attS){
-		// 引数として受け取った配列を処理する
-		for(var i in vbo){
-			// バッファをバインドする
-			gl.bindBuffer(gl.ARRAY_BUFFER, vbo[i]);
-			
-			// attributeLocationを有効にする
-			gl.enableVertexAttribArray(attL[i]);
-			
-			// attributeLocationを通知し登録する
-			gl.vertexAttribPointer(attL[i], attS[i], gl.FLOAT, false, 0, 0);
-		}
-	}
-	
-	// フレームバッファをオブジェクトとして生成する関数
-	function create_framebuffer(width, height, format){
-		// フォーマットチェック
-		var textureFormat = null;
-		if(!format){
-			textureFormat = gl.UNSIGNED_BYTE;
-		}else{
-			textureFormat = format;
-		}
-		
-		// フレームバッファの生成
-		var frameBuffer = gl.createFramebuffer();
-		
-		// フレームバッファをWebGLにバインド
-		gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
-		
-		// 深度バッファ用レンダーバッファの生成とバインド
-		var depthRenderBuffer = gl.createRenderbuffer();
-		gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderBuffer);
-		
-		// レンダーバッファを深度バッファとして設定
-		gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-		
-		// フレームバッファにレンダーバッファを関連付ける
-		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderBuffer);
-		
-		// フレームバッファ用テクスチャの生成
-		var fTexture = gl.createTexture();
-		
-		// フレームバッファ用のテクスチャをバインド
-		gl.bindTexture(gl.TEXTURE_2D, fTexture);
-		
-		// フレームバッファ用のテクスチャにカラー用のメモリ領域を確保
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, textureFormat, null);
-		
-		// テクスチャパラメータ
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		
-		// フレームバッファにテクスチャを関連付ける
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fTexture, 0);
-		
-		// 各種オブジェクトのバインドを解除
-		gl.bindTexture(gl.TEXTURE_2D, null);
-		gl.bindRenderbuffer(gl.RENDERBUFFER, null);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		
-		// オブジェクトを返して終了
-		return {f : frameBuffer, d : depthRenderBuffer, t : fTexture};
-	}
-	
-	// utility functions ======================================================
+    // variables
+    var gl, run, canvas, canvasWidth, canvasHeight;
+    var imageWidth, imageHeight;
+    var mousePosition, isMousedown, acceleration;
+    canvasWidth = 512;
+    canvasHeight = 512;
+    imageWidth = 256;
+    imageHeight = 256;
+
+    var VBOArray = [[],[]];
+    var position = [];
+    var velocity = [];
+    var target = [];
+
+    var devide_target = [];
+
+    var makefunc = [make_0,make_1,make_2,make_3,make_4,make_5,make_6,make_7,make_8,make_9];
+
+    window.addEventListener('load', function(){
+        // canvas initialize
+        canvas = document.getElementById('canvas');
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        mousePosition = [0.0, 0.0];
+        isMousedown = false;
+        acceleration = 0.0;
+
+        // mousemove event
+        canvas.addEventListener('mousedown', function(eve){
+            isMousedown = true;
+        }, false);
+        canvas.addEventListener('mouseup', function(eve){
+            isMousedown = false;
+        }, false);
+        canvas.addEventListener('mouseout', function(eve){
+            isMousedown = false;
+        }, false);
+        canvas.addEventListener('mousemove', function(eve){
+            var bound = eve.currentTarget.getBoundingClientRect();
+            var x = eve.clientX - bound.left;
+            var y = eve.clientY - bound.top;
+            mousePosition = [
+                x / bound.width * 2.0 - 1.0,
+                -(y / bound.height * 2.0 - 1.0)
+            ];
+        }, false);
+
+        // webgl2 initialize
+        gl = canvas.getContext('webgl2');
+        if(!gl){
+            console.log('webgl2 unsupported');
+            return;
+        }
+
+        // window keydown event
+        window.addEventListener('keydown', function(eve){
+            run = eve.keyCode !== 27;
+        }, false);
+
+        // generate imagedata
+        var img = new Image();
+        img.addEventListener('load', function(){
+            var c = document.createElement('canvas');
+            var ctx = c.getContext('2d');
+            c.width = imageWidth;
+            c.height = imageHeight;
+            ctx.drawImage(img, 0, 0, imageWidth, imageHeight);
+            init();
+        }, false);
+        img.src = 'lenna.jpg';
+
+        function init(){
+            // transform feedback object
+            var transformFeedback = gl.createTransformFeedback();
+            gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
+
+            // out variable names
+            var outVaryings = ['vPosition', 'vVelocity'];
+
+            // transform out shader
+            var vs = create_shader('vs_transform');
+            var fs = create_shader('fs_transform');
+            var prg = create_program_tf_separate(vs, fs, outVaryings);
+            var attStride = [2,2,2];
+            var uniLocation = [
+                gl.getUniformLocation(prg, 'mousePos'),
+                gl.getUniformLocation(prg, 'acceleration')
+            ];
+            
+            // feedback in shader
+            vs = create_shader('vs_main');
+            fs = create_shader('fs_main');
+            var fPrg = create_program(vs, fs);
+            var fAttStride = [2];
+            var fUniLocation = [
+                gl.getUniformLocation(fPrg, 'vpMatrix'),
+                gl.getUniformLocation(fPrg, 'move'),
+                gl.getUniformLocation(fPrg, 'ambient')
+            ];
+
+            // vertices
+            (function(){
+                var i, j, m;
+                var x, y;
+                for(i = 0; i < imageHeight; ++i){
+                    y = i / imageHeight * 2.0 - 1.0;
+                    for(j = 0; j < imageWidth; ++j){
+                        x = j / imageWidth * 2.0 - 1.0;
+                        position.push(x, -y);
+                        m = Math.sqrt(x * x + y * y);
+                        velocity.push(x / m, -y / m );
+                        target.push(0.5,0.0);
+                    }
+                }
+                devide_target.push(target.slice(0,target.length/4));
+                devide_target.push(target.slice(target.length/4,target.length/4*2));
+                devide_target.push(target.slice(target.length/4*2,target.length/4*3));
+                devide_target.push(target.slice(target.length/4*3));
+            })();
+
+            // create vbo
+            VBOArray = [
+                [
+                    create_vbo(position),
+                    create_vbo(velocity),
+                    create_vbo(target)
+                ], [
+                    create_vbo(position),
+                    create_vbo(velocity),
+                    create_vbo(target)
+                ]
+            ];
+
+            // matrix
+            var mat = new matIV();
+            var vMatrix   = mat.identity(mat.create());
+            var pMatrix   = mat.identity(mat.create());
+            var vpMatrix  = mat.identity(mat.create());
+            mat.lookAt([0.0, 0.0, 3.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], vMatrix);
+            mat.perspective(60, canvasWidth / canvasHeight, 0.1, 10.0, pMatrix);
+            mat.multiply(pMatrix, vMatrix, vpMatrix);
+
+            // flags
+            gl.disable(gl.DEPTH_TEST);
+            gl.disable(gl.CULL_FACE);
+            gl.enable(gl.BLEND);
+            gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE, gl.ONE, gl.ONE);
+            gl.disable(gl.RASTERIZER_DISCARD);
+
+            // setting
+            var startTime = Date.now();
+            var updateTime = Date.now();
+            var nowTime = 0;
+            var count = 0;
+            var lastMouseDown = isMousedown;
+            run = true;
+            var ambient = [];
+            var fstPos,sndPos;
+            var autoMove = false;
+
+            render();
+
+            function render(){
+                nowTime = (Date.now() - startTime) / 1000;
+                let onMouseDown = isMousedown == true && lastMouseDown == false;
+                let onMouseUp = isMousedown == false && lastMouseDown == true;
+                lastMouseDown = isMousedown;
+
+                if(updateTime + 1500 < Date.now()){
+                    acceleration *= 0.98;
+                }
+
+                if(updateDate(new Date())){
+                    updateVelocity();
+                    var tt = devide_target[0].concat(devide_target[1],devide_target[2],devide_target[3],devide_target[4]);
+                    VBOArray[0][1] = recreate_vio(VBOArray[0][1],velocity);
+                    VBOArray[0][2] = recreate_vio(VBOArray[0][2],tt);
+                    VBOArray[1][1] = recreate_vio(VBOArray[1][1],velocity);
+                    VBOArray[1][2] = recreate_vio(VBOArray[1][2],tt);
+                    updateTime = Date.now();
+                    acceleration = 1.0;
+                    
+                    fstPos = [Math.random() * 2.0 - 1.0,Math.random() * 2.0 - 1.0];
+                    sndPos = [Math.random() * 2.0 - 1.0,Math.random() * 2.0 - 1.0];
+                }
+                if(onMouseDown || onMouseUp){
+                    acceleration = 1.0;
+                }
+
+                // increment
+                ++count;
+                var countIndex = count % 2;
+                var invertIndex = 1 - countIndex;
+                
+		        ambient = hsva(count % 360, 1.0, 0.8, 1.0);
+
+                // program
+                gl.useProgram(prg);
+
+                // set vbo
+                set_attribute(VBOArray[countIndex], attStride);
+                gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, VBOArray[invertIndex][0]);
+                gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, VBOArray[invertIndex][1]);
+
+                // begin transform feedback
+                gl.enable(gl.RASTERIZER_DISCARD);
+                gl.beginTransformFeedback(gl.POINTS);
+
+                // vertex transform
+                gl.uniform2fv(uniLocation[0], mousePosition);
+                gl.uniform1f(uniLocation[1], acceleration);
+                gl.uniform1f(uniLocation[2], isMousedown == true ? 1.0:0.0);
+                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight);
+
+                // end transform feedback
+                gl.disable(gl.RASTERIZER_DISCARD);
+                gl.endTransformFeedback();
+                gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+                gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, null);
+                
+                // clear
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clearDepth(1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.viewport(0, 0, canvasWidth, canvasHeight);
+
+                // program
+                gl.useProgram(fPrg);
+
+                // set vbo
+                set_attribute(VBOArray[invertIndex], fAttStride);
+
+                // push and render
+                gl.uniformMatrix4fv(fUniLocation[0], false, vpMatrix);
+                gl.uniform1f(fUniLocation[1], acceleration);
+                gl.uniform4fv(fUniLocation[2], ambient);
+                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight);
+
+                gl.flush();
+
+                // animation loop
+                if(run){requestAnimationFrame(render);}
+            }
+        }
+    }, false);
+
+    // utility functions ======================================================
     function create_shader(id){
         var shader;
         var scriptElement = document.getElementById(id);
@@ -458,33 +298,177 @@ window.onload = function(){
         }
     }
 
-    function create_vbo(data){
-        var vbo = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    function recreate_vio(vbo, data){
+        gl.deleteBuffer(vbo);
+        var vbo2 = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo2);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_COPY);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        return vbo;
+        return vbo2;
     }
 
-    function create_vbo_feedback(data){
+    function create_vbo(data){
         var vbo = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_COPY);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
         return vbo;
     }
-
-    function set_attribute(vbo, attL, attS){
-        for(var i in vbo){
+    function set_attribute(vbo, attS){
+        for(var i in attS){
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo[i]);
-            gl.enableVertexAttribArray(attL[i]);
-            gl.vertexAttribPointer(attL[i], attS[i], gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(i);
+            gl.vertexAttribPointer(i, attS[i], gl.FLOAT, false, 0, 0);
         }
     }
 
-    function set_attribute_base(vbo){
-        for(var i in vbo){
-            gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, i, vbo[i]);
+    function updateVelocity(){
+        for(var i = 0; i < velocity.length; i += 2){
+            let y = Math.random()* 2.0 - 1.0;
+            let x = Math.random()* 2.0 - 1.0;
+            let m = Math.sqrt(x * x + y * y);
+            velocity[i] = x/m * 2.0;
+            velocity[i+1] = -y/m * 2.0;
         }
     }
-};
+
+    var currentMinute1 = Number.MAX_SAFE_INTEGER ;
+    var currentMinute10 = Number.MAX_SAFE_INTEGER;
+    var currentHour1 = Number.MAX_SAFE_INTEGER;
+    var currentHour10 = Number.MAX_SAFE_INTEGER;
+    function updateDate(date){
+        return updateMinute(Number(date.getMinutes())) || updateHour(Number(date.getHours()))
+    }
+    function updateMinute(minute){
+        let minute1 = minute%10;
+        let minute10 = parseInt(minute/10)%10;
+        if(currentMinute1 !== minute1){
+            //１の位の更新
+            makefunc[minute1](devide_target[0],[0.6,0.0]);
+            currentMinute1 = minute1;
+            return true;
+        }
+        if(currentMinute10 !== minute10){
+            //１０の位の更新
+            makefunc[minute10](devide_target[1],[0.25,0.0]);
+            currentMinute10 = minute10;
+            return true;
+        }
+        return false;
+    }
+    function updateHour(hour){
+        let hour1 = hour%10;
+        let hour10 = parseInt(hour/10)%10;
+        if(currentHour1 !== hour1){
+            //１の位の更新
+            makefunc[hour1](devide_target[2],[-0.25,0.0]);
+            currentHour1 = hour1;
+            return true;
+        }
+        if(currentHour10 !== hour10){
+            //１０の位の更新
+            makefunc[hour10](devide_target[3],[-0.6,0.0]);
+            currentHour10 = hour10;
+            return true;
+        }
+        return false;
+    }
+
+    var seg_position = [[[-0.1,0.1],[0.1,0.1]],
+                        [[-0.1,0.0],[0.1,0.0]],
+                        [[-0.1,-0.1],[0.1,-0.1]]];
+    var upper_line = seg_position[0];
+    var center_line = seg_position[1];
+    var bottom_line = seg_position[2];
+    var upper_left_line = [seg_position[0][0],seg_position[1][0]];
+    var upper_right_line = [seg_position[0][1],seg_position[1][1]];
+    var bottom_left_line = [seg_position[1][0],seg_position[2][0]];
+    var bottom_right_line = [seg_position[1][1],seg_position[2][1]];
+
+    function make_0(target_buffer,pos){
+        var line_num = 6;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_right_line,target_buffer,pos,line_num,1);
+        make_line(bottom_right_line,target_buffer,pos,line_num,2);
+        make_line(bottom_line,target_buffer,pos,line_num,3);
+        make_line(bottom_left_line,target_buffer,pos,line_num,4);
+        make_line(upper_left_line,target_buffer,pos,line_num,5);
+    }
+    function make_1(target_buffer,pos){
+        var line_num = 2;
+        make_line(upper_right_line,target_buffer,pos,line_num,0);
+        make_line(bottom_right_line,target_buffer,pos,line_num,1);
+    }
+    function make_2(target_buffer,pos){
+        var line_num = 5;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_right_line,target_buffer,pos,line_num,1);
+        make_line(center_line,target_buffer,pos,line_num,2);
+        make_line(bottom_left_line,target_buffer,pos,line_num,3);
+        make_line(bottom_line,target_buffer,pos,line_num,4);
+    }
+    function make_3(target_buffer,pos){
+        var line_num = 5;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_right_line,target_buffer,pos,line_num,1);
+        make_line(center_line,target_buffer,pos,line_num,2);
+        make_line(bottom_right_line,target_buffer,pos,line_num,3);
+        make_line(bottom_line,target_buffer,pos,line_num,4);
+    }
+    function make_4(target_buffer,pos){
+        var line_num = 4;
+        make_line(upper_right_line,target_buffer,pos,line_num,0);
+        make_line(bottom_right_line,target_buffer,pos,line_num,1);
+        make_line(upper_left_line,target_buffer,pos,line_num,2);
+        make_line(center_line,target_buffer,pos,line_num,3);
+    }
+    function make_5(target_buffer,pos){
+        var line_num = 5;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_left_line,target_buffer,pos,line_num,1);
+        make_line(center_line,target_buffer,pos,line_num,2);
+        make_line(bottom_right_line,target_buffer,pos,line_num,3);
+        make_line(bottom_line,target_buffer,pos,line_num,4);
+    }
+    function make_6(target_buffer,pos){
+        var line_num = 5;
+        make_line(upper_left_line,target_buffer,pos,line_num,0);
+        make_line(bottom_left_line,target_buffer,pos,line_num,1);
+        make_line(bottom_line,target_buffer,pos,line_num,2);
+        make_line(bottom_right_line,target_buffer,pos,line_num,3);
+        make_line(center_line,target_buffer,pos,line_num,4);
+    }
+    function make_7(target_buffer,pos){
+        var line_num = 3;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_right_line,target_buffer,pos,line_num,1);
+        make_line(bottom_right_line,target_buffer,pos,line_num,2);
+    }
+    function make_8(target_buffer,pos){
+        var line_num = 7;
+        make_line(upper_line,target_buffer,pos,line_num,0);
+        make_line(upper_right_line,target_buffer,pos,line_num,1);
+        make_line(bottom_right_line,target_buffer,pos,line_num,2);
+        make_line(bottom_line,target_buffer,pos,line_num,3);
+        make_line(bottom_left_line,target_buffer,pos,line_num,4);
+        make_line(upper_left_line,target_buffer,pos,line_num,5);
+        make_line(center_line,target_buffer,pos,line_num,6);
+    }
+    function make_9(target_buffer,pos){
+        var line_num = 5;
+        make_line(center_line,target_buffer,pos,line_num,0);
+        make_line(upper_left_line,target_buffer,pos,line_num,1);
+        make_line(upper_line,target_buffer,pos,line_num,2);
+        make_line(upper_right_line,target_buffer,pos,line_num,3);
+        make_line(bottom_right_line,target_buffer,pos,line_num,4);
+    }
+
+    function make_line(point,buffer,pos,step,count){
+        var start = point[0];
+        var vec = [point[1][0] - start[0],point[1][1] - start[1]];
+        for(var i=count*2;i<buffer.length;i+=step*2){
+            buffer[i] = start[0] + vec[0]/buffer.length * i + pos[0];
+            buffer[i+1] = start[1] + vec[1]/buffer.length * i + pos[1];
+        }
+    }
+})();

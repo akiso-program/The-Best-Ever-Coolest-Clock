@@ -18,7 +18,6 @@ layout (location = 0) in vec2 position;
 layout (location = 1) in vec2 velocity;
 layout (location = 2) in vec2 target;
 
-uniform float time;
 uniform vec2 mousePos; // -1.0 ~ 1.0
 uniform bool isMove; // 0.0 ~ 1.0
 uniform float acceleration; // 加速度係数
@@ -29,11 +28,15 @@ out vec2 vVelocity;
 const float SPEED = 0.05;  // パーティクルの速度係数
 
 void main(){
-    
-    vec2 v = normalize(target - position) * 0.5; // カーソル位置へのベクトル
-    vVelocity = normalize(v + velocity);           // ハーフベクトルで向きを補正
-
-    vPosition = position + vVelocity * SPEED * acceleration;
+    vec2 v = distance(target, position) == 0.0 
+                ? vec2(0.00001f,0.00001f) 
+                : normalize(target - position) * 0.5;
+    vVelocity = acceleration < 0.00001f 
+                ? vec2(0,0) 
+                : normalize(v + velocity);
+    vPosition = acceleration < 0.00001f 
+                ? target 
+                : position + vVelocity * SPEED * acceleration;
 }
     </script>
     <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
