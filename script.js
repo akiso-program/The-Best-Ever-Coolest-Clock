@@ -88,7 +88,8 @@
             var attStride = [2,2,2];
             var uniLocation = [
                 gl.getUniformLocation(prg, 'mousePos'),
-                gl.getUniformLocation(prg, 'acceleration')
+                gl.getUniformLocation(prg, 'acceleration'),
+                gl.getUniformLocation(prg, 'isMouseDown')
             ];
             
             // feedback in shader
@@ -198,6 +199,20 @@
                 }
                 if(onMouseDown || onMouseUp){
                     acceleration = 1.0;
+                }
+                
+                // 時間更新後1秒なぞった様に動く
+                if(updateTime + 1000 > Date.now()){
+                    let time = (Date.now() - updateTime) / 1000;
+                    mousePosition = [lerp(fstPos[0],sndPos[0],time),lerp(fstPos[1],sndPos[1],time)];
+                    isMousedown = true;
+                    autoMove = true;
+                }
+                // なぞったような動き終了
+                if(autoMove && updateTime + 1000 < Date.now()){
+                    autoMove = false;
+                    lastMouseDown = true;
+                    isMousedown = false;
                 }
 
                 // increment
@@ -489,5 +504,11 @@
         // 値を0以上1未満になるよう正規化する
         value = (value + 3) / 6;
         return value;
+    }
+    
+    // 線形補間
+    function lerp(a, b, t) {
+        if(b == a) return a;
+        return a + t * (b - a);
     }
 })();
