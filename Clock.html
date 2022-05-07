@@ -20,6 +20,7 @@ layout (location = 2) in vec2 target;
 
 uniform vec2 mousePos; // -1.0 ~ 1.0
 uniform float acceleration; // 加速度係数
+uniform float isMouseDown; // 1.0:True else:False
 
 out vec2 vPosition;
 out vec2 vVelocity;
@@ -27,15 +28,21 @@ out vec2 vVelocity;
 const float SPEED = 0.05;  // パーティクルの速度係数
 
 void main(){
-    vec2 v = distance(target, position) == 0.0 
-                ? vec2(0.00001f,0.00001f) 
-                : normalize(target - position) * 0.5;
-    vVelocity = acceleration < 0.00001f 
-                ? vec2(0,0) 
-                : normalize(v + velocity);
-    vPosition = acceleration < 0.00001f 
-                ? target 
-                : position + vVelocity * SPEED * acceleration;
+    if(isMouseDown == 1.0){
+        vec2 v = normalize(mousePos - position) * 0.2;
+        vVelocity = normalize(v + velocity);
+        vPosition = position + vVelocity * SPEED;
+    }else{
+        vec2 v = distance(target, position) == 0.0 
+                    ? vec2(0.00001f,0.00001f) 
+                    : normalize(target - position) * 0.5;
+        vVelocity = acceleration < 0.00001f 
+                    ? vec2(0,0) 
+                    : normalize(v + velocity);
+        vPosition = acceleration < 0.00001f 
+                    ? target 
+                    : position + vVelocity * SPEED * acceleration;
+    }
 }
     </script>
     <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
