@@ -9,6 +9,7 @@
     canvasHeight = 512;
     imageWidth = 256;
     imageHeight = 256;
+    let additionalDots = 200;
 
     var VBOArray = [[],[]];
     var position = [];
@@ -118,6 +119,15 @@
                 devide_target.push(target.slice(target.length/4,target.length/4*2));
                 devide_target.push(target.slice(target.length/4*2,target.length/4*3));
                 devide_target.push(target.slice(target.length/4*3));
+                for(i=0;i<additionalDots;++i){
+                    x = rnorm() * 2.0 - 1.0;
+                    y = rnorm() * 2.0 - 1.0;
+                    m = Math.sqrt(x * x + y * y);
+                    position.push(x, -y);
+                    velocity.push(x / m, -y / m );
+                    target.push(x, -y);
+                }
+                devide_target.push(target.slice(-additionalDots));
             })();
 
             // create vbo
@@ -173,6 +183,7 @@
                 }
 
                 if(updateDate(new Date())){
+                    devide_target[4].forEach(e => e = rnorm() * 2.0 - 1.0 );
                     updateVelocity();
                     var tt = devide_target[0].concat(devide_target[1],devide_target[2],devide_target[3],devide_target[4]);
                     VBOArray[0][1] = recreate_vio(VBOArray[0][1],velocity);
@@ -212,7 +223,7 @@
                 gl.uniform2fv(uniLocation[0], mousePosition);
                 gl.uniform1f(uniLocation[1], acceleration);
                 gl.uniform1f(uniLocation[2], isMousedown == true ? 1.0:0.0);
-                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight);
+                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight + additionalDots);
 
                 // end transform feedback
                 gl.disable(gl.RASTERIZER_DISCARD);
@@ -235,7 +246,7 @@
                 // push and render
                 gl.uniformMatrix4fv(fUniLocation[0], false, vpMatrix);
                 gl.uniform4fv(fUniLocation[1], ambient);
-                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight);
+                gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight + additionalDots);
 
                 gl.flush();
 
@@ -468,5 +479,15 @@
             buffer[i] = start[0] + vec[0]/buffer.length * i + pos[0];
             buffer[i+1] = start[1] + vec[1]/buffer.length * i + pos[1];
         }
+    }
+
+    // 正規分布にでのランダム生成
+    function rnorm() {
+        var value =
+          Math.sqrt(-2.0 * Math.log(Math.random())) *
+          Math.sin(2.0 * Math.PI * Math.random());
+        // 値を0以上1未満になるよう正規化する
+        value = (value + 3) / 6;
+        return value;
     }
 })();
