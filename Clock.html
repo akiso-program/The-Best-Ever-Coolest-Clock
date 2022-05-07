@@ -19,7 +19,6 @@ layout (location = 1) in vec2 velocity;
 layout (location = 2) in vec2 target;
 
 uniform vec2 mousePos; // -1.0 ~ 1.0
-uniform bool isMove; // 0.0 ~ 1.0
 uniform float acceleration; // 加速度係数
 
 out vec2 vPosition;
@@ -47,15 +46,12 @@ void main(){
     </script>
     <script id="vs_main" type="x-shader/x-vertex">#version 300 es
 layout (location = 0) in vec2 position;
-layout (location = 1) in vec2 velocity;
-layout (location = 2) in vec2 target;
 
 uniform mat4 vpMatrix;
-uniform float move;
 
 void main(){
     gl_Position = vpMatrix * vec4(position, 1.0, 1.0);
-    gl_PointSize = 1.0 * (3.0 + move);
+    gl_PointSize = 3.0;
 }
     </script>
     <script id="fs_main" type="x-shader/x-fragment">#version 300 es
@@ -71,6 +67,5 @@ void main(){
     </head>
     <body class="vsc-initialized">
         <canvas id="canvas" width="512" height="512"></canvas>
-        <div id="info">ready</div>
     </body>
 </html>

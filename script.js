@@ -97,7 +97,6 @@
             var fAttStride = [2];
             var fUniLocation = [
                 gl.getUniformLocation(fPrg, 'vpMatrix'),
-                gl.getUniformLocation(fPrg, 'move'),
                 gl.getUniformLocation(fPrg, 'ambient')
             ];
 
@@ -235,8 +234,7 @@
 
                 // push and render
                 gl.uniformMatrix4fv(fUniLocation[0], false, vpMatrix);
-                gl.uniform1f(fUniLocation[1], acceleration);
-                gl.uniform4fv(fUniLocation[2], ambient);
+                gl.uniform4fv(fUniLocation[1], ambient);
                 gl.drawArrays(gl.POINTS, 0, imageWidth * imageHeight);
 
                 gl.flush();
