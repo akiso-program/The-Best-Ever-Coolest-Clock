@@ -23,6 +23,7 @@
     window.addEventListener('load', function(){
         // canvas initialize
         canvas = document.getElementById('canvas');
+        //canvas = document.createElement('canvas');
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
         mousePosition = [0.0, 0.0];
@@ -30,16 +31,16 @@
         acceleration = 0.0;
 
         // mousemove event
-        canvas.addEventListener('mousedown', function(eve){
+        canvas.addEventListener('pointerdown', function(eve){
             isMousedown = true;
         }, false);
-        canvas.addEventListener('mouseup', function(eve){
+        canvas.addEventListener('pointerup', function(eve){
             isMousedown = false;
         }, false);
-        canvas.addEventListener('mouseout', function(eve){
+        canvas.addEventListener('pointerout', function(eve){
             isMousedown = false;
         }, false);
-        canvas.addEventListener('mousemove', function(eve){
+        canvas.addEventListener('pointermove', function(eve){
             var bound = eve.currentTarget.getBoundingClientRect();
             var x = eve.clientX - bound.left;
             var y = eve.clientY - bound.top;
@@ -60,19 +61,8 @@
         window.addEventListener('keydown', function(eve){
             run = eve.keyCode !== 27;
         }, false);
-
-        // generate imagedata
-        var img = new Image();
-        img.addEventListener('load', function(){
-            var c = document.createElement('canvas');
-            var ctx = c.getContext('2d');
-            c.width = imageWidth;
-            c.height = imageHeight;
-            ctx.drawImage(img, 0, 0, imageWidth, imageHeight);
-            init();
-        }, false);
-        img.src = 'lenna.jpg';
-
+        
+        init();
         function init(){
             // transform feedback object
             var transformFeedback = gl.createTransformFeedback();
